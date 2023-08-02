@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"flag"
 	"io"
 	"log"
 	"os"
@@ -9,18 +9,24 @@ import (
 	"golang.org/x/net/websocket"
 )
 
+var name = flag.String("name", "", "client user name")
+
+func Env(key string) string {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		log.Fatalf("address env variable \"%s\" not set, usual", key)
+	}
+	return value
+}
+
+var RELAY_URL = Env("RELAY_URL")
+
 func main() {
 
-	origin := "http://localhost/"
-	url := "ws://localhost:8000/"
+    flag.Parse()
 
-	ws, err := websocket.Dial(url, "", origin)
+    ws, err := websocket.Dial("ws://" + RELAY_URL, "", "http://")
 	if err != nil {
-		log.Fatal(err)
-	}
-
-	_, err = ws.Write([]byte("hello, friend!\n"))
-    if err != nil {
 		log.Fatal(err)
 	}
 
@@ -30,21 +36,17 @@ func main() {
 		log.Println("done")
 		done <- struct{}{} // signal the main goroutine
 	}()
+
 	mustCopy(ws, os.Stdin)
+
 	ws.Close()
+
 	<-done // wait for background goroutine to finish
-
-	var msg = make([]byte, 512)
-	var n int
-	if n, err = ws.Read(msg); err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Printf("Received: %s.\n", msg[:n])
 }
 
 func mustCopy(dst io.Writer, src io.Reader) {
-	if _, err := io.Copy(dst, src); err != nil {
+	_, err := io.Copy(dst, src)
+    if err != nil {
 		log.Fatal(err)
 	}
 }

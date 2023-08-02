@@ -3,11 +3,23 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
+	"os"
 
 	"golang.org/x/net/websocket"
 )
+
+func Env(key string) string {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		log.Fatalf("address env variable \"%s\" not set, usual", key)
+	}
+	return value
+}
+
+var RELAY_URL = Env("RELAY_URL")
 
 type client chan<- string // outgoing message channel
 
@@ -54,25 +66,30 @@ func broadcast() {
 
 func clientWriter(conn net.Conn, ch <-chan string) {
     for msg := range ch {
-        fmt.Fprintln(conn, msg)
+        fmt.Fprint(conn, msg)
     }
 }
 
 // Echo the data received on the WebSocket.
-func EchoServer(conn *websocket.Conn) {
+func handleEvents(conn *websocket.Conn) {
 
     ch := make(chan string)
 
     go clientWriter(conn, ch)
 
-    who := conn.RemoteAddr().String()
-    ch <- "You are " + who
-    messages <- who + " has arrived"
-    entering <- ch
+    name := ""
+    ch <- "Enter your name: "
 
     input := bufio.NewScanner(conn)
     for input.Scan() {
-        messages <- who + ": " + input.Text()
+        if name == "" {
+            name = input.Text()
+            ch <- "Hi, " + name + "\n"
+            messages <- name + " joined" + "\n"
+            entering <- ch
+        } else {
+            messages <- name + ": " + input.Text() + "\n"
+        }
     }
 
     // NOTE: ignoring potential errors from input.Err()
@@ -81,7 +98,7 @@ func EchoServer(conn *websocket.Conn) {
     //messages <- who + " has left"
     //conn.Close()
 
-    conn.Write([]byte("heelo"))
+    conn.Write([]byte("hello"))
 }
 
 // This example demonstrates a trivial echo server.
@@ -89,9 +106,9 @@ func main() {
 
 	go broadcast()
 
-	http.Handle("/", websocket.Handler(EchoServer))
+	http.Handle("/", websocket.Handler(handleEvents))
 
-	err := http.ListenAndServe(":8000", nil)
+	err := http.ListenAndServe(RELAY_URL, nil)
 	if err != nil {
 		panic("ListenAndServe: " + err.Error())
 	}
