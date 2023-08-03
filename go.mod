@@ -2,10 +2,8 @@ module github.com/ffiat/relay
 
 go 1.19
 
-replace github.com/ffiat/nostr => ../nostr
-
 require (
-	github.com/ffiat/nostr v0.1.0
+	github.com/ffiat/nostr v0.1.1
 	nhooyr.io/websocket v1.8.7
 )
 

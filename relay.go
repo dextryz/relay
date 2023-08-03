@@ -130,14 +130,14 @@ func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Fatalf("unable to store event: %v", err)
 			}
 
-            // Return the result as defined in NIP-20
+			// Return the result as defined in NIP-20
 			c.result <- nostr.MessageOk{
 				EventId: e.GetId(),
 				Ok:      true,
 				Message: "",
 			}
 
-            // TODO: Broadcast events to registered clients.
+			// TODO: Broadcast events to registered clients.
 			//s.events <- e.Event
 
 		case "REQ":
