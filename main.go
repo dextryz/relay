@@ -1,11 +1,24 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"net"
 	"net/http"
 	"os"
 )
+
+const createDb string = `
+DROP TABLE IF EXISTS events;
+CREATE TABLE events (
+    id TEXT PRIMARY KEY,
+    pubkey TEXT,
+    created_at INTEGER,
+    kind INTEGER,
+    content TEXT,
+    sig TEXT
+);
+`
 
 func main() {
 
@@ -16,7 +29,20 @@ func main() {
 
 	log.Printf("listening on http://%v", listener.Addr())
 
-	relay := newRelay()
+	db, err := sql.Open("sqlite3", "test.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+    _, err = db.Exec(createDb)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    log.Println("table events created")
+
+	relay := newRelay(db)
 
 	go relay.broadcaster()
 

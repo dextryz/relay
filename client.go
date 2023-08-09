@@ -2,6 +2,8 @@ package main
 
 import "github.com/ffiat/nostr"
 
+// 1. Client manages the filters.
+
 type client struct {
 
 	// NIP-01: Send events received from broadcaster to client.

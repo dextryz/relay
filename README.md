@@ -2,30 +2,28 @@
 
 A tiny minimal nostr relay in Go.
 
-## DONE
+## Todo
 
-- Register connected clients via Hub-and-Spoke pattern.
-- Receive a NIP-01 text event and respond with a NIP-20 OK.
-
-## TODO
-
-- Store event in database.
-- Broadcast received events to registered clients.
+- [ ] Retrieve stored event via Id (REQ from NIP-01).
+- [ ] Broadcast received events to registered clients.
+- [X] Store events in SQLite database.
+- [X] Register connected clients via Hub-and-Spoke pattern.
+- [X] Receive a NIP-01 text event and respond with a NIP-20 OK.
 
 ## Usage
 
 ```shell
 # Build binary
-: go build
+go build
 
 # Run relay
-: ./relay "localhost:8000"
+./relay "localhost:8000"
 ```
 
 From another terminal, send a text event via [melange](https://github.com/ffiat/melange):
 
 ```shell
-: ./melange event -note "hello, friend"
+./melange event -note "hello, friend"
 
 [+] Text note published
 [

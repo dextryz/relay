@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/ffiat/nostr v0.1.1
+	github.com/mattn/go-sqlite3 v1.14.17
 	nhooyr.io/websocket v1.8.7
 )
 

@@ -2,33 +2,38 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+
 	"log"
 	"net/http"
 	"sync"
 
 	"nhooyr.io/websocket"
 
+	_ "github.com/mattn/go-sqlite3"
+
 	"github.com/ffiat/nostr"
 )
 
+// 1. Relay managed the database.
+
 type relay struct {
+	db         *sql.DB
 	clients    map[*client]bool
 	events     chan nostr.Event
 	register   chan client
 	unregister chan client
 }
 
-func newRelay() *relay {
-
-	r := relay{
+func newRelay(db *sql.DB) *relay {
+	return &relay{
+		db:         db,
 		clients:    make(map[*client]bool),
 		events:     make(chan nostr.Event),
 		register:   make(chan client),
 		unregister: make(chan client),
 	}
-
-	return &r
 }
 
 func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +173,14 @@ func (s *relay) broadcaster() {
 
 func (s *relay) store(e nostr.Event) error {
 
-	// TODO: Store in relay database
+    eventSql := "INSERT INTO events (id, pubkey, created_at, kind, content, sig) VALUES (?, ?, ?, ?, ?, ?)"
+
+	_, err := s.db.Exec(eventSql, e.Id, e.PubKey, e.CreatedAt, e.Kind, e.Content, e.Sig)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Event (id: %s) stored in relay DB", e.Id)
 
 	return nil
 }
