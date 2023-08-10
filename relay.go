@@ -1,30 +1,23 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
-
+	"io"
 	"log"
 	"net/http"
+	"strings"
 
-	"nhooyr.io/websocket"
+	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsutil"
 
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/ffiat/nostr"
 )
 
-type writer struct {
-    connection *websocket.Conn
-}
-
-// 1. Relay managed the database.
-
 type relay struct {
 	db         *sql.DB
-    ws    *websocket.Conn
 	clients    map[*client]bool
 	events     chan nostr.Event
 	register   chan client
@@ -43,14 +36,12 @@ func newRelay(db *sql.DB) *relay {
 
 func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
-	ws, err := websocket.Accept(w, r, nil)
+	ws, _, _, err := ws.UpgradeHTTP(r, w)
 	if err != nil {
 		log.Fatalln(err)
 		return
 	}
-	//defer ws.Close(websocket.StatusInternalError, "closing")
-
-    s.ws = ws
+	defer ws.Close()
 
 	c := client{
 		send:   make(chan nostr.Event),
@@ -59,59 +50,65 @@ func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	s.register <- c
 
-	ctx := r.Context()
-	//ctx := ws.CloseRead(r.Context())
+	for {
+		msg, op, err := wsutil.ReadClientData(ws)
+		if err != nil {
+			if strings.Contains(err.Error(), "ws closed: 1000") {
+				log.Println("client disconnected")
+				break
+			}
+			if err != io.EOF {
+				log.Printf("Read error: %v", err)
+			}
+			// The client closed the connection.
+			// So break out of the loop and end the goroutine witht the close statement.
+			break
+		}
 
-    for {
+		msg, err = s.process(msg)
+		if err != nil {
+			log.Printf("Err 2: %#v", err)
+		}
 
-        kind, raw, err := ws.Read(ctx)
-        if err != nil {
-            log.Fatalln(err)
-        }
-
-        msg, err := s.process(raw)
-        if err != nil {
-            log.Fatalln(err)
-        }
-
-        err = ws.Write(ctx, kind, msg)
-        if err != nil {
-            log.Fatalln(err)
-        }
-    }
+		err = wsutil.WriteServerMessage(ws, op, msg)
+		if err != nil {
+			log.Printf("Err 3: %#v", err)
+		}
+	}
 }
 
 func (s relay) process(raw []byte) ([]byte, error) {
 
-    msg := nostr.DecodeMessage(raw)
-    switch msg.Type() {
-    case "EVENT":
+	msg := nostr.DecodeMessage(raw)
+	switch msg.Type() {
+	case "EVENT":
 
-        var e nostr.MessageEvent
-        err := json.Unmarshal(raw, &e)
-        if err != nil {
-            log.Fatalf("unable to unmarshal event: %v", err)
-        }
+		var e nostr.MessageEvent
+		err := json.Unmarshal(raw, &e)
+		if err != nil {
+			log.Fatalf("unable to unmarshal event: %v", err)
+		}
 
-         err = s.store(e.Event)
-         if err != nil {
-             log.Fatalf("unable to store event: %v", err)
-         }
+		err = s.store(e.Event)
+		if err != nil {
+			log.Fatalf("unable to store event: %v", err)
+		}
 
-        // Return the result as defined in NIP-20
-        r := nostr.MessageOk{
-            EventId: e.GetId(),
-            Ok:      true,
-            Message: "",
-        }
+		// Return the result as defined in NIP-20
+		r := nostr.MessageOk{
+			EventId: e.GetId(),
+			Ok:      true,
+			Message: "",
+		}
 
-        return json.Marshal(r)
+		return json.Marshal(r)
 
-    case "REQ":
-        log.Print("REQ")
-    }
+	case "REQ":
+		log.Print("REQ")
+		return nil, nil
+	}
 
-    return nil, nil
+	return nil, nil
 }
 
 func (s *relay) broadcaster() {
@@ -141,21 +138,7 @@ func (s *relay) store(e nostr.Event) error {
 		return err
 	}
 
-	log.Printf("Event (id: %s) stored in relay DB", e.Id)
+	log.Printf("Event (id: %s) stored in relay DB", e.Id[:16])
 
 	return nil
-}
-
-func nextMessage(ctx context.Context, ws *websocket.Conn) ([]byte, error) {
-
-	typ, b, err := ws.Read(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if typ != websocket.MessageText {
-		ws.Close(websocket.StatusUnsupportedData, "expected text message")
-		return nil, fmt.Errorf("expected text message but got %v", typ)
-	}
-	return b, nil
 }
