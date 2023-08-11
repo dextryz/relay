@@ -1,22 +1,20 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
-
+	"io"
 	"log"
 	"net/http"
-	"sync"
+	"strings"
 
-	"nhooyr.io/websocket"
+	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsutil"
 
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/ffiat/nostr"
 )
-
-// 1. Relay managed the database.
 
 type relay struct {
 	db         *sql.DB
@@ -38,12 +36,12 @@ func newRelay(db *sql.DB) *relay {
 
 func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
-	ws, err := websocket.Accept(w, r, nil)
+	ws, _, _, err := ws.UpgradeHTTP(r, w)
 	if err != nil {
 		log.Fatalln(err)
 		return
 	}
-	defer ws.Close(websocket.StatusInternalError, "")
+	defer ws.Close()
 
 	c := client{
 		send:   make(chan nostr.Event),
@@ -52,105 +50,65 @@ func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	s.register <- c
 
-	ctx := context.Background()
-
-	var wg sync.WaitGroup
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case e := <-c.send:
-
-				bytes, err := json.Marshal(e)
-				if err != nil {
-					log.Fatal(err)
-					return
-				}
-
-				err = ws.Write(context.TODO(), websocket.MessageText, bytes)
-				if err != nil {
-					log.Fatal(err)
-					return
-				}
-			case r := <-c.result:
-
-				bytes, err := json.Marshal(r)
-				if err != nil {
-					log.Fatal(err)
-					return
-				}
-
-				err = ws.Write(context.TODO(), websocket.MessageText, bytes)
-				if err != nil {
-					log.Fatal(err)
-					return
-				}
+	for {
+		msg, op, err := wsutil.ReadClientData(ws)
+		if err != nil {
+			if strings.Contains(err.Error(), "ws closed: 1000") {
+				log.Println("client disconnected")
+				break
 			}
+			if err != io.EOF {
+				log.Printf("Read error: %v", err)
+			}
+			// The client closed the connection.
+			// So break out of the loop and end the goroutine witht the close statement.
+			break
 		}
-	}()
 
-	// Pull events from broker into local channels.
-	// Defining a function creates a smaller lexical scope for confinement.
-	readStream := func() <-chan []byte {
-		wg.Add(1)
-		stream := make(chan []byte)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					_, raw, err := ws.Read(ctx)
-					if err != nil {
-						log.Fatalln(err)
-					}
+		msg, err = s.process(msg)
+		if err != nil {
+			log.Printf("Err 2: %#v", err)
+		}
 
-					stream <- raw
-				}
-			}
-		}()
-		return stream
-	}
-
-	for raw := range readStream() {
-
-		msg := nostr.DecodeMessage(raw)
-
-		switch msg.Type() {
-		case "EVENT":
-
-			var e nostr.MessageEvent
-			err = json.Unmarshal(raw, &e)
-			if err != nil {
-				log.Fatalf("unable to unmarshal event: %v", err)
-			}
-
-			err := s.store(e.Event)
-			if err != nil {
-				log.Fatalf("unable to store event: %v", err)
-			}
-
-			// Return the result as defined in NIP-20
-			c.result <- nostr.MessageOk{
-				EventId: e.GetId(),
-				Ok:      true,
-				Message: "",
-			}
-
-			// TODO: Broadcast events to registered clients.
-			//s.events <- e.Event
-
-		case "REQ":
-			log.Print("REQ")
+		err = wsutil.WriteServerMessage(ws, op, msg)
+		if err != nil {
+			log.Printf("Err 3: %#v", err)
 		}
 	}
+}
 
-	wg.Wait()
+func (s relay) process(raw []byte) ([]byte, error) {
+
+	msg := nostr.DecodeMessage(raw)
+	switch msg.Type() {
+	case "EVENT":
+
+		var e nostr.MessageEvent
+		err := json.Unmarshal(raw, &e)
+		if err != nil {
+			log.Fatalf("unable to unmarshal event: %v", err)
+		}
+
+		err = s.store(e.Event)
+		if err != nil {
+			log.Fatalf("unable to store event: %v", err)
+		}
+
+		// Return the result as defined in NIP-20
+		r := nostr.MessageOk{
+			EventId: e.GetId(),
+			Ok:      true,
+			Message: "",
+		}
+
+		return json.Marshal(r)
+
+	case "REQ":
+		log.Print("REQ")
+		return nil, nil
+	}
+
+	return nil, nil
 }
 
 func (s *relay) broadcaster() {
@@ -173,14 +131,14 @@ func (s *relay) broadcaster() {
 
 func (s *relay) store(e nostr.Event) error {
 
-    eventSql := "INSERT INTO events (id, pubkey, created_at, kind, content, sig) VALUES (?, ?, ?, ?, ?, ?)"
+	eventSql := "INSERT INTO events (id, pubkey, created_at, kind, content, sig) VALUES (?, ?, ?, ?, ?, ?)"
 
 	_, err := s.db.Exec(eventSql, e.Id, e.PubKey, e.CreatedAt, e.Kind, e.Content, e.Sig)
 	if err != nil {
 		return err
 	}
 
-	log.Printf("Event (id: %s) stored in relay DB", e.Id)
+	log.Printf("Event (id: %s) stored in relay DB", e.Id[:16])
 
 	return nil
 }

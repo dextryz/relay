@@ -4,11 +4,16 @@ A tiny minimal nostr relay in Go.
 
 ## Todo
 
+- [ ] Implement structure logging.
 - [ ] Retrieve stored event via Id (REQ from NIP-01).
 - [ ] Broadcast received events to registered clients.
 - [X] Store events in SQLite database.
 - [X] Register connected clients via Hub-and-Spoke pattern.
 - [X] Receive a NIP-01 text event and respond with a NIP-20 OK.
+
+## Fix
+
+- [X] Connection closes when a client disconnects.
 
 ## Usage
 

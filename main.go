@@ -31,16 +31,18 @@ func main() {
 
 	db, err := sql.Open("sqlite3", "test.db")
 	if err != nil {
+		log.Println("elfweklfklj")
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-    _, err = db.Exec(createDb)
-    if err != nil {
-        log.Fatal(err)
-    }
+	_, err = db.Exec(createDb)
+	if err != nil {
+		log.Println("elfweklfklj")
+		log.Fatal(err)
+	}
 
-    log.Println("table events created")
+	log.Println("table events created")
 
 	relay := newRelay(db)
 
@@ -54,4 +56,5 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+
 }
