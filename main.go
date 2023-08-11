@@ -31,14 +31,12 @@ func main() {
 
 	db, err := sql.Open("sqlite3", "test.db")
 	if err != nil {
-		log.Println("elfweklfklj")
 		log.Fatal(err)
 	}
 	defer db.Close()
 
 	_, err = db.Exec(createDb)
 	if err != nil {
-		log.Println("elfweklfklj")
 		log.Fatal(err)
 	}
 

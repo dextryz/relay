@@ -19,6 +19,7 @@ import (
 type relay struct {
 	db         *sql.DB
 	clients    map[*client]bool
+
 	events     chan nostr.Event
 	register   chan client
 	unregister chan client
@@ -105,6 +106,13 @@ func (s relay) process(raw []byte) ([]byte, error) {
 
 	case "REQ":
 		log.Print("REQ")
+
+        // 1. Parse the req message from the raw stream of data.
+        // 2. Query the event repository with the filter and get a set of events.
+        // 3. Send these events to the current spoke's send channel.
+        // There is no need to broadcast it to the hub, since we want to send the data to the current client.
+        // We are basically just making a round trip to the event repository.
+
 		return nil, nil
 	}
 
@@ -141,4 +149,9 @@ func (s *relay) store(e nostr.Event) error {
 	log.Printf("Event (id: %s) stored in relay DB", e.Id[:16])
 
 	return nil
+}
+
+func (s *relay) query(filter nostr.Filter) error {
+
+    return nil
 }
