@@ -40,22 +40,53 @@ func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
     // TODO: Maybe add client ID and Authentication via NIP-42
     log.Println("client connected")
 
-	ws, _, _, err := ws.UpgradeHTTP(r, w)
+	conn, _, _, err := ws.UpgradeHTTP(r, w)
 	if err != nil {
 		log.Fatalln(err)
 		return
 	}
-	defer ws.Close()
+	defer conn.Close()
 
 	c := client{
-		send:   make(chan nostr.Event),
+		send:   make(chan nostr.MessageEvent),
 		result: make(chan nostr.MessageOk),
 	}
 
 	s.register <- c
 
+    go func() {
+        select {
+        case msg := <-c.send:
+
+            log.Println("SENDING event to clienr")
+
+            bytes, err := json.Marshal(msg)
+            if err != nil {
+                log.Fatalln("unable to send REQ filtered messages")
+            }
+
+            err = wsutil.WriteServerMessage(conn, ws.OpText, bytes)
+            if err != nil {
+                log.Printf("Err 3: %#v", err)
+            }
+        case msg := <-c.result:
+
+            log.Println("SENDING OK response to clienr")
+
+            bytes, err := json.Marshal(msg)
+            if err != nil {
+                log.Fatalln("unable to send Ok response")
+            }
+
+            err = wsutil.WriteServerMessage(conn, ws.OpText, bytes)
+            if err != nil {
+                log.Printf("Err 3: %#v", err)
+            }
+        }
+    }()
+
 	for {
-		msg, op, err := wsutil.ReadClientData(ws)
+		msg, _, err := wsutil.ReadClientData(conn)
         log.Println(string(msg))
 		if err != nil {
 			if strings.Contains(err.Error(), "ws closed: 1000") {
@@ -70,19 +101,14 @@ func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		msg, err = s.process(msg)
+		msg, err = s.process(&c, msg)
 		if err != nil {
 			log.Printf("Err 2: %#v", err)
-		}
-
-		err = wsutil.WriteServerMessage(ws, op, msg)
-		if err != nil {
-			log.Printf("Err 3: %#v", err)
 		}
 	}
 }
 
-func (s relay) process(raw []byte) ([]byte, error) {
+func (s relay) process(c *client, raw []byte) ([]byte, error) {
 
 	msg := nostr.DecodeMessage(raw)
 
@@ -106,13 +132,11 @@ func (s relay) process(raw []byte) ([]byte, error) {
 		}
 
 		// Return the result as defined in NIP-20
-		r := nostr.MessageOk{
+		c.result <- nostr.MessageOk{
 			EventId: e.GetId(),
 			Ok:      true,
 			Message: "",
 		}
-
-		return json.Marshal(r)
 
 	case "REQ":
 		log.Print("REQ")
@@ -140,6 +164,18 @@ func (s relay) process(raw []byte) ([]byte, error) {
                 log.Println("no events found")
             }
 
+            for event := range eventStream {
+
+                log.Printf("E: %v", event)
+
+                // Needc to put ths here to get SubId
+                m := nostr.MessageEvent{
+                    SubscriptionId: msg.SubscriptionId,
+                    Event: *event,
+                }
+
+                c.send <- m
+            }
         }
 
 
@@ -161,7 +197,14 @@ func (s *relay) broadcaster() {
 		select {
 		case e := <-s.events:
 			for c := range s.clients {
-				c.send <- e
+
+                // FIXME: get SubId
+                m := nostr.MessageEvent{
+                    SubscriptionId: "",
+                    Event: e,
+                }
+
+				c.send <- m
 			}
 		case c := <-s.register:
 			s.clients[&c] = true
@@ -187,21 +230,20 @@ func (s *relay) store(e nostr.Event) error {
 	return nil
 }
 
-func (s *relay) query(filter nostr.Filter) (<-chan *nostr.Event, error) {
+func (s *relay) query(filter nostr.Filter) (chan *nostr.Event, error) {
 
     log.Println("Querying")
 
-    stream := make(chan *nostr.Event)
+    stream := make(chan *nostr.Event, 3)
 
     for _, pub := range filter.Authors {
-        events, err := eventsByPubkey(s.db, pub)
+        err := eventsByPubkey(s.db, pub, stream)
         if err != nil {
-            return nil, err
-        }
-        for _, e := range events {
-            stream <- &e
+            log.Fatalln(err)
         }
     }
+
+    log.Printf("Len: %d", len(stream))
 
 //     for _, id := range filter.Ids {
 //         e, err := getEvent(s.db, id)
@@ -228,30 +270,31 @@ func getEvent(db *sql.DB, id string) (*nostr.Event, error) {
     return event, nil
 }
 
-func eventsByPubkey(db *sql.DB, pubkey string) ([]nostr.Event, error) {
+func eventsByPubkey(db *sql.DB, pubkey string, stream chan<- *nostr.Event) error {
 
     log.Printf("Query by PubKey: %s", pubkey)
 
     rows, err := db.Query("SELECT id, pubkey, created_at, kind, content, sig FROM events WHERE pubkey = ?", pubkey)
     if err != nil {
-        return nil, err
+        return err
     }
     defer rows.Close()
 
-    var events []nostr.Event
     for rows.Next() {
         var event nostr.Event
-        if err := rows.Scan(&event.Id, &event.PubKey, &event.CreatedAt, &event.Kind, &event.Content, &event.Sig); err != nil {
-            return nil, err
+        err := rows.Scan(&event.Id, &event.PubKey, &event.CreatedAt, &event.Kind, &event.Content, &event.Sig)
+        if err != nil {
+            return err
         }
-        log.Println("EVENT FOUND")
-        log.Println(event)
-        events = append(events, event)
+        stream <- &event
     }
 
-    if err := rows.Err(); err != nil {
-        return nil, err
+    err = rows.Err()
+    if err != nil {
+        return err
     }
 
-    return events, nil
+    log.Print("--------")
+
+    return nil
 }

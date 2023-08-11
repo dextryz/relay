@@ -7,7 +7,7 @@ import "github.com/ffiat/nostr"
 type client struct {
 
 	// NIP-01: Send events received from broadcaster to client.
-	send chan nostr.Event
+	send chan nostr.MessageEvent
 
 	// NIP-20: Result channel for event published.
 	result chan nostr.MessageOk

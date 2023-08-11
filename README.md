@@ -1,19 +1,16 @@
 # Tiny Relay
 
-A tiny minimal nostr relay in Go.
+A tiny nostr relay implemented in Go with an embedded SQLite database.
 
 ## Todo
 
-- [ ] Implement structure logging.
-- [ ] Retrieve stored event via Id (REQ from NIP-01).
 - [ ] Broadcast received events to registered clients.
+- [ ] Implement structure logging.
+- [ ] Send stored event to client REQ via event ID.
+- [X] Send stored events to client REQ via author public key.
 - [X] Store events in SQLite database.
 - [X] Register connected clients via Hub-and-Spoke pattern.
 - [X] Receive a NIP-01 text event and respond with a NIP-20 OK.
-
-## Fix
-
-- [X] Connection closes when a client disconnects.
 
 ## Usage
 
@@ -37,3 +34,7 @@ From another terminal, send a text event via [melange](https://github.com/ffiat/
     true
 ]
 ```
+
+## Fix
+
+- [X] Connection closes when a client disconnects.
