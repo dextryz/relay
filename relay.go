@@ -18,6 +18,7 @@ import (
 
 type relay struct {
 	db      *sql.DB
+	limits  limit
 	clients map[*client]bool
 
 	events     chan nostr.Event
@@ -32,6 +33,10 @@ func newRelay(db *sql.DB) *relay {
 		events:     make(chan nostr.Event),
 		register:   make(chan client),
 		unregister: make(chan client),
+		limits: limit{
+			max_limit:   500,
+			max_filters: 500,
+		},
 	}
 }
 

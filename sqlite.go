@@ -55,6 +55,14 @@ func (s *relay) store(e nostr.Event) error {
 // Query database with a filter for a set of events, then push (SubId, Event) on the stream.
 func (s *relay) query(subId string, filter nostr.Filter, stream chan<- nostr.MessageEvent) error {
 
+	if len(filter.Authors) > s.limits.max_limit {
+		return ErrMaxLimit
+	}
+
+	if len(filter.Ids) > s.limits.max_limit {
+		return ErrMaxLimit
+	}
+
 	for _, pub := range filter.Authors {
 
 		events, err := eventsByPubkey(s.db, pub)

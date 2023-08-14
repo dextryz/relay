@@ -7,9 +7,9 @@ help:
 # QUALITY CONTROL
 # ------------------------------------------------------------------------------------ #
 
-## tidy: format code and tidy modfile
-.PHONY: tidy
-tidy:
+## fmt: format code and tidy modfile
+.PHONY: fmt
+fmt:
 	go fmt ./...
 	go mod tidy -v
 
