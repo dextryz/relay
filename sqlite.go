@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -57,14 +58,14 @@ func (s *relay) store(e nostr.Event) error {
 // Query database with a filter for a set of events, then push (SubId, Event) on the stream.
 func (s *relay) query(subId string, filter nostr.Filter, stream chan<- nostr.MessageEvent) error {
 
-    var conditions []string
+	var conditions []string
 	var args []interface{}
 
 	if len(filter.Ids) > 0 {
 
-        if len(filter.Ids) > s.limits.max_limit {
-            return ErrMaxLimit
-        }
+		if len(filter.Ids) > s.limits.max_limit {
+			return ErrMaxLimit
+		}
 
 		placeholdersForIds := make([]string, len(filter.Ids))
 		for i, id := range filter.Ids {
@@ -76,9 +77,9 @@ func (s *relay) query(subId string, filter nostr.Filter, stream chan<- nostr.Mes
 
 	if len(filter.Authors) > 0 {
 
-        if len(filter.Authors) > s.limits.max_limit {
-            return ErrMaxLimit
-        }
+		if len(filter.Authors) > s.limits.max_limit {
+			return ErrMaxLimit
+		}
 
 		placeholdersForPubkeys := make([]string, len(filter.Authors))
 		for i, pubkey := range filter.Authors {
@@ -88,18 +89,38 @@ func (s *relay) query(subId string, filter nostr.Filter, stream chan<- nostr.Mes
 		conditions = append(conditions, fmt.Sprintf("pubkey IN (%s)", strings.Join(placeholdersForPubkeys, ",")))
 	}
 
+	if filter.Kinds != nil {
+
+		if len(filter.Kinds) > 10 {
+			// too many kinds, fail everything
+			return nil
+		}
+
+		if len(filter.Kinds) == 0 {
+			// kinds being [] mean you won't get anything
+			return nil
+		}
+
+		// no sql injection issues since these are ints
+		inkinds := make([]string, len(filter.Kinds))
+		for i, kind := range filter.Kinds {
+			inkinds[i] = strconv.Itoa(int(kind))
+		}
+		conditions = append(conditions, fmt.Sprintf("kind IN (%s)", strings.Join(inkinds, ",")))
+	}
+
 	// If both lists are empty, this is an error or not meaningful.
 	if len(conditions) == 0 {
 		return fmt.Errorf("both ids and pubkeys are empty")
 	}
 
-    query := fmt.Sprintf("SELECT * FROM events WHERE %s", strings.Join(conditions, " AND "))
+	query := fmt.Sprintf("SELECT * FROM events WHERE %s", strings.Join(conditions, " AND "))
 
-    rows, err := s.db.Query(query, args...)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return err
 	}
-    defer rows.Close()
+	defer rows.Close()
 
 	var events []*nostr.Event
 
@@ -112,12 +133,12 @@ func (s *relay) query(subId string, filter nostr.Filter, stream chan<- nostr.Mes
 		events = append(events, &event)
 	}
 
-    for _, event := range events {
-        stream <- nostr.MessageEvent{
-            SubscriptionId: subId,
-            Event:          *event,
-        }
-    }
+	for _, event := range events {
+		stream <- nostr.MessageEvent{
+			SubscriptionId: subId,
+			Event:          *event,
+		}
+	}
 
 	return nil
 }
