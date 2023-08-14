@@ -87,7 +87,6 @@ func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		msg, _, err := wsutil.ReadClientData(conn)
-        log.Println(string(msg))
 		if err != nil {
 			if strings.Contains(err.Error(), "ws closed: 1000") {
 				log.Println("client disconnected")
@@ -111,9 +110,6 @@ func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s relay) process(c *client, raw []byte) ([]byte, error) {
 
 	msg := nostr.DecodeMessage(raw)
-
-    log.Println("process")
-    log.Println(msg)
 
 	switch msg.Type() {
 	case "EVENT":
@@ -178,7 +174,6 @@ func (s relay) process(c *client, raw []byte) ([]byte, error) {
             }
         }
 
-
         // 3. Send these events to the current spoke's send channel.
         // There is no need to broadcast it to the hub, since we want to send the data to the current client.
         // We are basically just making a round trip to the event repository.
@@ -214,87 +209,4 @@ func (s *relay) broadcaster() {
 		default:
 		}
 	}
-}
-
-func (s *relay) store(e nostr.Event) error {
-
-	eventSql := "INSERT INTO events (id, pubkey, created_at, kind, content, sig) VALUES (?, ?, ?, ?, ?, ?)"
-
-	_, err := s.db.Exec(eventSql, e.Id, e.PubKey, e.CreatedAt, e.Kind, e.Content, e.Sig)
-	if err != nil {
-		return err
-	}
-
-    log.Printf("Event (id: %s, pubkey: %s) stored in relay DB", e.Id[:16], e.PubKey)
-
-	return nil
-}
-
-func (s *relay) query(filter nostr.Filter) (chan *nostr.Event, error) {
-
-    log.Println("Querying")
-
-    stream := make(chan *nostr.Event, 3)
-
-    for _, pub := range filter.Authors {
-        err := eventsByPubkey(s.db, pub, stream)
-        if err != nil {
-            log.Fatalln(err)
-        }
-    }
-
-    log.Printf("Len: %d", len(stream))
-
-//     for _, id := range filter.Ids {
-//         e, err := getEvent(s.db, id)
-//         if err != nil {
-//             return nil, err
-//         }
-//         stream <- e
-//     }
-
-    return stream, nil
-}
-
-func getEvent(db *sql.DB, id string) (*nostr.Event, error) {
-
-    event := &nostr.Event{}
-
-    row := db.QueryRow("SELECT id, pubkey, created_at, kind, content, sig FROM events WHERE id = ?", id)
-
-    err := row.Scan(&event.Id, &event.PubKey, &event.CreatedAt, &event.Kind, &event.Content, &event.Sig)
-    if err != nil {
-        return nil, err
-    }
-
-    return event, nil
-}
-
-func eventsByPubkey(db *sql.DB, pubkey string, stream chan<- *nostr.Event) error {
-
-    log.Printf("Query by PubKey: %s", pubkey)
-
-    rows, err := db.Query("SELECT id, pubkey, created_at, kind, content, sig FROM events WHERE pubkey = ?", pubkey)
-    if err != nil {
-        return err
-    }
-    defer rows.Close()
-
-    for rows.Next() {
-        var event nostr.Event
-        err := rows.Scan(&event.Id, &event.PubKey, &event.CreatedAt, &event.Kind, &event.Content, &event.Sig)
-        if err != nil {
-            return err
-        }
-        stream <- &event
-    }
-
-    err = rows.Err()
-    if err != nil {
-        return err
-    }
-
-    log.Print("--------")
-
-    return nil
 }
