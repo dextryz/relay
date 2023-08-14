@@ -35,7 +35,7 @@ func newSqlite(database string) *sql.DB {
 
 	log.Println("table events created")
 
-    return db
+	return db
 }
 
 func (s *relay) store(e nostr.Event) error {
@@ -47,76 +47,86 @@ func (s *relay) store(e nostr.Event) error {
 		return err
 	}
 
-    log.Printf("Event (id: %s, pubkey: %s) stored in relay DB", e.Id[:16], e.PubKey)
+	log.Printf("Event (id: %s, pubkey: [%s..%s]) stored in relay DB", e.Id[:10], e.PubKey[:5], e.PubKey[len(e.PubKey)-5:])
 
 	return nil
 }
 
-func (s *relay) query(filter nostr.Filter) (chan *nostr.Event, error) {
+// Query database with a filter for a set of events, then push (SubId, Event) on the stream.
+func (s *relay) query(subId string, filter nostr.Filter, stream chan<- nostr.MessageEvent) error {
 
-    log.Println("Querying")
+	for _, pub := range filter.Authors {
 
-    stream := make(chan *nostr.Event, 3)
+		events, err := eventsByPubkey(s.db, pub)
+		if err != nil {
+			return err
+		}
 
-    for _, pub := range filter.Authors {
-        err := eventsByPubkey(s.db, pub, stream)
-        if err != nil {
-            log.Fatalln(err)
-        }
-    }
+		for _, event := range events {
+			stream <- nostr.MessageEvent{
+				SubscriptionId: subId,
+				Event:          *event,
+			}
+		}
 
-    log.Printf("Len: %d", len(stream))
+		log.Printf("Pulled events with public key: [%s..%s]", pub[:5], pub[len(pub)-5:])
+	}
 
-//     for _, id := range filter.Ids {
-//         e, err := getEvent(s.db, id)
-//         if err != nil {
-//             return nil, err
-//         }
-//         stream <- e
-//     }
+	for _, id := range filter.Ids {
 
-    return stream, nil
+		event, err := eventById(s.db, id)
+		if err != nil {
+			return err
+		}
+
+		stream <- nostr.MessageEvent{
+			SubscriptionId: subId,
+			Event:          *event,
+		}
+
+		log.Printf("Pulled event with ID: [%s..%s]", id[:5], id[len(id)-5:])
+	}
+
+	return nil
 }
 
-func getEvent(db *sql.DB, id string) (*nostr.Event, error) {
+func eventById(db *sql.DB, id string) (*nostr.Event, error) {
 
-    event := &nostr.Event{}
+	event := &nostr.Event{}
 
-    row := db.QueryRow("SELECT id, pubkey, created_at, kind, content, sig FROM events WHERE id = ?", id)
+	row := db.QueryRow("SELECT id, pubkey, created_at, kind, content, sig FROM events WHERE id = ?", id)
 
-    err := row.Scan(&event.Id, &event.PubKey, &event.CreatedAt, &event.Kind, &event.Content, &event.Sig)
-    if err != nil {
-        return nil, err
-    }
+	err := row.Scan(&event.Id, &event.PubKey, &event.CreatedAt, &event.Kind, &event.Content, &event.Sig)
+	if err != nil {
+		return nil, err
+	}
 
-    return event, nil
+	return event, nil
 }
 
-func eventsByPubkey(db *sql.DB, pubkey string, stream chan<- *nostr.Event) error {
+func eventsByPubkey(db *sql.DB, pubkey string) ([]*nostr.Event, error) {
 
-    log.Printf("Query by PubKey: %s", pubkey)
+	var events []*nostr.Event
 
-    rows, err := db.Query("SELECT id, pubkey, created_at, kind, content, sig FROM events WHERE pubkey = ?", pubkey)
-    if err != nil {
-        return err
-    }
-    defer rows.Close()
+	rows, err := db.Query("SELECT id, pubkey, created_at, kind, content, sig FROM events WHERE pubkey = ?", pubkey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
-    for rows.Next() {
-        var event nostr.Event
-        err := rows.Scan(&event.Id, &event.PubKey, &event.CreatedAt, &event.Kind, &event.Content, &event.Sig)
-        if err != nil {
-            return err
-        }
-        stream <- &event
-    }
+	for rows.Next() {
+		var event nostr.Event
+		err := rows.Scan(&event.Id, &event.PubKey, &event.CreatedAt, &event.Kind, &event.Content, &event.Sig)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, &event)
+	}
 
-    err = rows.Err()
-    if err != nil {
-        return err
-    }
+	err = rows.Err()
+	if err != nil {
+		return nil, err
+	}
 
-    log.Print("--------")
-
-    return nil
+	return events, nil
 }

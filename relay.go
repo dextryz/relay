@@ -17,8 +17,8 @@ import (
 )
 
 type relay struct {
-	db         *sql.DB
-	clients    map[*client]bool
+	db      *sql.DB
+	clients map[*client]bool
 
 	events     chan nostr.Event
 	register   chan client
@@ -37,8 +37,8 @@ func newRelay(db *sql.DB) *relay {
 
 func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
-    // TODO: Maybe add client ID and Authentication via NIP-42
-    log.Println("client connected")
+	// TODO: Maybe add client ID and Authentication via NIP-42
+	log.Println("client connected")
 
 	conn, _, _, err := ws.UpgradeHTTP(r, w)
 	if err != nil {
@@ -54,39 +54,39 @@ func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	s.register <- c
 
-    go func() {
-        select {
-        case msg := <-c.send:
+	go func() {
+		select {
+		case msg := <-c.send:
 
-            log.Println("SENDING event to clienr")
+			log.Println("sending EVENT to client")
 
-            bytes, err := json.Marshal(msg)
-            if err != nil {
-                log.Fatalln("unable to send REQ filtered messages")
-            }
+			bytes, err := json.Marshal(msg)
+			if err != nil {
+				log.Fatalln("unable to send REQ filtered messages")
+			}
 
-            err = wsutil.WriteServerMessage(conn, ws.OpText, bytes)
-            if err != nil {
-                log.Printf("Err 3: %#v", err)
-            }
-        case msg := <-c.result:
+			err = wsutil.WriteServerMessage(conn, ws.OpText, bytes)
+			if err != nil {
+				log.Printf("Err 3: %#v", err)
+			}
+		case msg := <-c.result:
 
-            log.Println("SENDING OK response to clienr")
+			log.Println("sending OK to client")
 
-            bytes, err := json.Marshal(msg)
-            if err != nil {
-                log.Fatalln("unable to send Ok response")
-            }
+			bytes, err := json.Marshal(msg)
+			if err != nil {
+				log.Fatalln("unable to send Ok response")
+			}
 
-            err = wsutil.WriteServerMessage(conn, ws.OpText, bytes)
-            if err != nil {
-                log.Printf("Err 3: %#v", err)
-            }
-        }
-    }()
+			err = wsutil.WriteServerMessage(conn, ws.OpText, bytes)
+			if err != nil {
+				log.Printf("Err 3: %#v", err)
+			}
+		}
+	}()
 
 	for {
-		msg, _, err := wsutil.ReadClientData(conn)
+		raw, _, err := wsutil.ReadClientData(conn)
 		if err != nil {
 			if strings.Contains(err.Error(), "ws closed: 1000") {
 				log.Println("client disconnected")
@@ -100,90 +100,91 @@ func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		msg, err = s.process(&c, msg)
-		if err != nil {
-			log.Printf("Err 2: %#v", err)
+		// Process message depending on the type.
+		msg := nostr.DecodeMessage(raw)
+		switch msg.Type() {
+		case "EVENT":
+			res, err := s.storeEvent(raw)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			c.result <- res
+		case "REQ":
+			// Pull events into a read-only channel.
+			events, err := s.pullEvents(raw)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			for e := range events {
+				c.send <- e
+			}
+		default:
+			log.Fatalln("unkown event type")
 		}
 	}
 }
 
-func (s relay) process(c *client, raw []byte) ([]byte, error) {
+// Store event in database and return result command (NIP-20)
+func (s *relay) storeEvent(raw []byte) (nostr.MessageOk, error) {
 
-	msg := nostr.DecodeMessage(raw)
-
-	switch msg.Type() {
-	case "EVENT":
-
-		log.Print("EVENT")
-
-		var e nostr.MessageEvent
-		err := json.Unmarshal(raw, &e)
-		if err != nil {
-			log.Fatalf("unable to unmarshal event: %v", err)
-		}
-
-		err = s.store(e.Event)
-		if err != nil {
-			log.Fatalf("unable to store event: %v", err)
-		}
-
-		// Return the result as defined in NIP-20
-		c.result <- nostr.MessageOk{
-			EventId: e.GetId(),
-			Ok:      true,
-			Message: "",
-		}
-
-	case "REQ":
-		log.Print("REQ")
-
-        // 1. Parse the req message from the raw stream of data.
-		var msg nostr.MessageReq
-		err := json.Unmarshal(raw, &msg)
-		if err != nil {
-			log.Fatalf("unable to unmarshal event: %v", err)
-		}
-
-        if len(msg.Filters) == 0 {
-            log.Println("no filters to be applied")
-        }
-
-        // 2. Query the event repository with the filter and get a set of events.
-        for _, filter := range msg.Filters {
-
-            eventStream, err := s.query(filter)
-            if err != nil {
-                log.Fatalf("unable to query events: %v", err)
-            }
-
-            if len(eventStream) == 0 {
-                log.Println("no events found")
-            }
-
-            for event := range eventStream {
-
-                log.Printf("E: %v", event)
-
-                // Needc to put ths here to get SubId
-                m := nostr.MessageEvent{
-                    SubscriptionId: msg.SubscriptionId,
-                    Event: *event,
-                }
-
-                c.send <- m
-            }
-        }
-
-        // 3. Send these events to the current spoke's send channel.
-        // There is no need to broadcast it to the hub, since we want to send the data to the current client.
-        // We are basically just making a round trip to the event repository.
-
-		return nil, nil
-    default:
-        log.Fatalln("unkown event type")
+	var e nostr.MessageEvent
+	err := json.Unmarshal(raw, &e)
+	if err != nil {
+		log.Fatalf("unable to unmarshal event: %v", err)
 	}
 
-	return nil, nil
+	err = s.store(e.Event)
+	if err != nil {
+		log.Fatalf("unable to store event: %v", err)
+	}
+
+	// Return the result as defined in NIP-20
+	return nostr.MessageOk{
+		EventId: e.GetId(),
+		Ok:      true,
+		Message: "",
+	}, nil
+}
+
+// Use a confined stream to pull REQ events from database.
+// Note that we have to encode the message subID in this method
+func (s *relay) pullEvents(raw []byte) (<-chan nostr.MessageEvent, error) {
+
+	// 1. Parse the req message from the raw stream of data.
+	var msg nostr.MessageReq
+	err := json.Unmarshal(raw, &msg)
+	if err != nil {
+		log.Fatalf("unable to unmarshal event: %v", err)
+	}
+
+	if len(msg.Filters) == 0 {
+		log.Println("no filters to be applied")
+	}
+
+	// 2. Query the event repository with the filter and get a set of events.
+	stream := make(chan nostr.MessageEvent)
+
+	go func() {
+		defer close(stream)
+
+		for _, filter := range msg.Filters {
+
+			err := s.query(msg.SubscriptionId, filter, stream)
+			if err != nil {
+				log.Fatalf("unable to query events: %v", err)
+			}
+
+			for event := range stream {
+				stream <- event
+			}
+		}
+	}()
+
+	// 3. Send these events to the current spoke's send channel.
+	// There is no need to broadcast it to the hub, since we want to send the data to the current client.
+	// We are basically just making a round trip to the event repository.
+
+	return stream, nil
 }
 
 func (s *relay) broadcaster() {
@@ -193,11 +194,11 @@ func (s *relay) broadcaster() {
 		case e := <-s.events:
 			for c := range s.clients {
 
-                // FIXME: get SubId
-                m := nostr.MessageEvent{
-                    SubscriptionId: "",
-                    Event: e,
-                }
+				// FIXME: get SubId
+				m := nostr.MessageEvent{
+					SubscriptionId: "",
+					Event:          e,
+				}
 
 				c.send <- m
 			}

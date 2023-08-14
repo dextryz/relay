@@ -16,8 +16,8 @@ func main() {
 
 	log.Printf("listening on http://%v", listener.Addr())
 
-    db := newSqlite("test.db")
-    defer db.Close()
+	db := newSqlite("test.db")
+	defer db.Close()
 
 	relay := newRelay(db)
 
