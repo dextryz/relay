@@ -4,6 +4,8 @@ A tiny nostr relay implemented in Go with an embedded SQLite database.
 
 ## Todo
 
+- [ ] Add support for reference tag queries (i.e. #r)
+- [ ] Handle NIP-51 bookmark lists.
 - [ ] Broadcast received events to registered clients.
 - [ ] Implement structure logging.
 - [X] Handle event basic and regular storage via NIP-16.
@@ -25,7 +27,7 @@ make build
 ./relay "localhost:8000"
 ```
 
-From another terminal, send a text event via [melange](https://github.com/ffiat/melange):
+From another terminal, send a text event via [ixian](https://github.com/ffiat/melange):
 
 ```shell
 ./melange event -note "hello, friend"
@@ -37,7 +39,3 @@ From another terminal, send a text event via [melange](https://github.com/ffiat/
     true
 ]
 ```
-
-## Fix
-
-- [X] Connection closes when a client disconnects.
