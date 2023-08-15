@@ -63,8 +63,8 @@ func (s *relay) query(subId string, filter nostr.Filter, stream chan<- nostr.Mes
 
 	if len(filter.Ids) > 0 {
 
-		if len(filter.Ids) > s.limits.max_limit {
-			return ErrMaxLimit
+		if len(filter.Ids) > s.limits.MaxLimit {
+			return nil
 		}
 
 		placeholdersForIds := make([]string, len(filter.Ids))
@@ -77,8 +77,8 @@ func (s *relay) query(subId string, filter nostr.Filter, stream chan<- nostr.Mes
 
 	if len(filter.Authors) > 0 {
 
-		if len(filter.Authors) > s.limits.max_limit {
-			return ErrMaxLimit
+		if len(filter.Authors) > s.limits.MaxLimit {
+			return nil
 		}
 
 		placeholdersForPubkeys := make([]string, len(filter.Authors))

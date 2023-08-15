@@ -2,6 +2,8 @@ module github.com/ffiat/relay
 
 go 1.19
 
+replace github.com/ffiat/nostr => ../nostr
+
 require (
 	github.com/ffiat/nostr v0.1.1
 	github.com/gobwas/ws v1.0.2
