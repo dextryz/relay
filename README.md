@@ -6,6 +6,7 @@ A tiny nostr relay implemented in Go with an embedded SQLite database.
 
 - [ ] Broadcast received events to registered clients.
 - [ ] Implement structure logging.
+- [X] Handle event basic and regular storage via NIP-16.
 - [X] Handle NIP-11 requests for relay information.
 - [X] Aggregate filter query to SQLite.
 - [X] Send stored event to client REQ via event ID.

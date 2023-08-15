@@ -26,7 +26,7 @@ func main() {
 		Description:   "Tiny Relay",
 		PubKey:        "",
 		Contact:       "",
-		SupportedNIPs: []int{1, 11, 20},
+		SupportedNIPs: []int{1, 11, 16, 20},
 		Version:       "n/a",
 		Limitation: &nostr.RelayLimitation{
 			MaxLimit:   500,

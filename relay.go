@@ -47,8 +47,8 @@ func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(s.info)
 	} else {
-        s.HandleWebsocket(w, r)
-    }
+		s.HandleWebsocket(w, r)
+	}
 }
 
 func (s *relay) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
@@ -146,10 +146,20 @@ func (s *relay) storeEvent(raw []byte) (nostr.MessageOk, error) {
 		log.Fatalf("unable to unmarshal event: %v", err)
 	}
 
-	err = s.store(e.Event)
-	if err != nil {
-		log.Fatalf("unable to store event: %v", err)
-	}
+    if e.IsBasicEvent() || e.IsRegularEvent() {
+        err = s.store(e.Event)
+        if err != nil {
+            log.Fatalf("unable to store event: %v", err)
+        }
+    }
+
+    if e.IsReplaceableEvent() {
+        log.Fatalf("replaceable event types [%d] to supported yet", e.Event.Kind)
+    }
+
+    if e.IsEphemeralEvent() {
+        log.Fatalln("ephemeral event types to supported yet.")
+    }
 
 	// Return the result as defined in NIP-20
 	return nostr.MessageOk{
