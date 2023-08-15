@@ -1,31 +1,36 @@
 # Tiny Relay
 
-A tiny minimal nostr relay in Go.
+A tiny nostr relay implemented in Go with an embedded SQLite database.
 
-## DONE
+## Todo
 
-- Register connected clients via Hub-and-Spoke pattern.
-- Receive a NIP-01 text event and respond with a NIP-20 OK.
-
-## TODO
-
-- Store event in database.
-- Broadcast received events to registered clients.
+- [ ] Add support for reference tag queries (i.e. #r)
+- [ ] Handle NIP-51 bookmark lists.
+- [ ] Broadcast received events to registered clients.
+- [ ] Implement structure logging.
+- [X] Handle event basic and regular storage via NIP-16.
+- [X] Handle NIP-11 requests for relay information.
+- [X] Aggregate filter query to SQLite.
+- [X] Send stored event to client REQ via event ID.
+- [X] Send stored events to client REQ via author public key.
+- [X] Store events in SQLite database.
+- [X] Register connected clients via Hub-and-Spoke pattern.
+- [X] Receive a NIP-01 text event and respond with a NIP-20 OK.
 
 ## Usage
 
 ```shell
 # Build binary
-: go build
+make build
 
 # Run relay
-: ./relay "localhost:8000"
+./relay "localhost:8000"
 ```
 
-From another terminal, send a text event via [melange](https://github.com/ffiat/melange):
+From another terminal, send a text event via [ixian](https://github.com/ffiat/melange):
 
 ```shell
-: ./melange event -note "hello, friend"
+./melange event -note "hello, friend"
 
 [+] Text note published
 [
