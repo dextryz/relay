@@ -63,7 +63,7 @@ func (s *relay) query(subId string, filter nostr.Filter, stream chan<- nostr.Mes
 
 	if len(filter.Ids) > 0 {
 
-		if len(filter.Ids) > s.limits.MaxLimit {
+		if len(filter.Ids) > s.info.Limitation.MaxLimit {
 			return nil
 		}
 
@@ -77,7 +77,7 @@ func (s *relay) query(subId string, filter nostr.Filter, stream chan<- nostr.Mes
 
 	if len(filter.Authors) > 0 {
 
-		if len(filter.Authors) > s.limits.MaxLimit {
+		if len(filter.Authors) > s.info.Limitation.MaxLimit{
 			return nil
 		}
 

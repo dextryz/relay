@@ -18,7 +18,7 @@ import (
 
 type relay struct {
 	db      *sql.DB
-	limits  nostr.RelayLimitation
+	info    nostr.RelayInformation
 	clients map[*client]bool
 
 	events     chan nostr.Event
@@ -26,17 +26,14 @@ type relay struct {
 	unregister chan client
 }
 
-func newRelay(db *sql.DB) *relay {
+func newRelay(db *sql.DB, info nostr.RelayInformation) *relay {
 	return &relay{
 		db:         db,
+		info:       info,
 		clients:    make(map[*client]bool),
 		events:     make(chan nostr.Event),
 		register:   make(chan client),
 		unregister: make(chan client),
-		limits: nostr.RelayLimitation{
-			MaxFilters:   500,
-			MaxLimit: 500,
-		},
 	}
 }
 
@@ -44,6 +41,17 @@ func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: Maybe add client ID and Authentication via NIP-42
 	log.Println("client connected")
+
+	// Support for NIP-11 - Send relay information to client.
+	if r.Header.Get("Accept") == "application/nostr+json" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(s.info)
+	} else {
+        s.HandleWebsocket(w, r)
+    }
+}
+
+func (s *relay) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 
 	conn, _, _, err := ws.UpgradeHTTP(r, w)
 	if err != nil {

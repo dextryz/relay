@@ -5,6 +5,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+
+	"github.com/ffiat/nostr"
 )
 
 func main() {
@@ -19,7 +21,20 @@ func main() {
 	db := newSqlite("test.db")
 	defer db.Close()
 
-	relay := newRelay(db)
+	info := nostr.RelayInformation{
+		Name:          "ffiat",
+		Description:   "Tiny Relay",
+		PubKey:        "",
+		Contact:       "",
+		SupportedNIPs: []int{1, 11, 20},
+		Version:       "n/a",
+		Limitation: &nostr.RelayLimitation{
+			MaxLimit:   500,
+			MaxFilters: 500,
+		},
+	}
+
+	relay := newRelay(db, info)
 
 	go relay.broadcaster()
 
