@@ -8,6 +8,7 @@ A tiny nostr relay implemented in Go with an embedded SQLite database.
 - [ ] Handle NIP-51 bookmark lists.
 - [ ] Broadcast received events to registered clients.
 - [ ] Implement structure logging.
+- [ ] Remove parameterized event from DB before storing.
 - [X] Handle event basic and regular storage via NIP-16.
 - [X] Handle NIP-11 requests for relay information.
 - [X] Aggregate filter query to SQLite.

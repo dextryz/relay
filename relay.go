@@ -39,9 +39,6 @@ func newRelay(db *sql.DB, info nostr.RelayInformation) *relay {
 
 func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
-	// TODO: Maybe add client ID and Authentication via NIP-42
-	log.Println("client connected")
-
 	// Support for NIP-11 - Send relay information to client.
 	if r.Header.Get("Accept") == "application/nostr+json" {
 		w.Header().Set("Content-Type", "application/json")
@@ -52,6 +49,9 @@ func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *relay) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
+
+	// TODO: Maybe add client ID and Authentication via NIP-42
+	log.Println("client connected")
 
 	conn, _, _, err := ws.UpgradeHTTP(r, w)
 	if err != nil {
@@ -66,6 +66,8 @@ func (s *relay) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.register <- c
+
+	log.Println("A")
 
 	go func() {
 		select {
@@ -101,6 +103,7 @@ func (s *relay) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 	for {
 		raw, _, err := wsutil.ReadClientData(conn)
 		if err != nil {
+            //log.Println(err)
 			if strings.Contains(err.Error(), "ws closed: 1000") {
 				log.Println("client disconnected")
 				break
@@ -146,20 +149,24 @@ func (s *relay) storeEvent(raw []byte) (nostr.MessageOk, error) {
 		log.Fatalf("unable to unmarshal event: %v", err)
 	}
 
-    if e.IsBasicEvent() || e.IsRegularEvent() {
-        err = s.store(e.Event)
-        if err != nil {
-            log.Fatalf("unable to store event: %v", err)
-        }
-    }
-
-    if e.IsReplaceableEvent() {
-        log.Fatalf("replaceable event types [%d] to supported yet", e.Event.Kind)
-    }
-
-    if e.IsEphemeralEvent() {
-        log.Fatalln("ephemeral event types to supported yet.")
-    }
+	if e.IsBasicEvent() || e.IsRegularEvent() {
+		err = s.store(e.Event)
+		if err != nil {
+			log.Fatalf("unable to store regular event: %v", err)
+		}
+	} else if e.IsReplaceableEvent() {
+		log.Fatalf("replaceable event types [%d] to supported yet", e.Event.Kind)
+	} else if e.IsEphemeralEvent() {
+		log.Fatalln("ephemeral event types to supported yet.")
+	} else if e.IsParameterizedEvent() {
+		err = s.store(e.Event)
+		if err != nil {
+			log.Fatalf("unable to store parameterized event: %v", err)
+		}
+        log.Printf("parameterized event stored [id: %s, kind: %d]", e.Event.Id[:10], e.Event.Kind)
+	} else {
+		log.Fatalln("unsupported event type")
+	}
 
 	// Return the result as defined in NIP-20
 	return nostr.MessageOk{
@@ -172,6 +179,9 @@ func (s *relay) storeEvent(raw []byte) (nostr.MessageOk, error) {
 // Use a confined stream to pull REQ events from database.
 // Note that we have to encode the message subID in this method
 func (s *relay) pullEvents(raw []byte) (<-chan nostr.MessageEvent, error) {
+
+    // TODO: make log.Debug
+    log.Println("Pulling events")
 
 	// 1. Parse the req message from the raw stream of data.
 	var msg nostr.MessageReq

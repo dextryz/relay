@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
@@ -19,6 +20,7 @@ CREATE TABLE events (
     pubkey TEXT,
     created_at INTEGER,
     kind INTEGER,
+    tags TEXT NOT NULL,
     content TEXT,
     sig TEXT
 );
@@ -43,9 +45,12 @@ func newSqlite(database string) *sql.DB {
 
 func (s *relay) store(e nostr.Event) error {
 
-	eventSql := "INSERT INTO events (id, pubkey, created_at, kind, content, sig) VALUES (?, ?, ?, ?, ?, ?)"
+    tags := make([]byte, 0)
+    tags = e.Tags.Encode(tags)
 
-	_, err := s.db.Exec(eventSql, e.Id, e.PubKey, e.CreatedAt, e.Kind, e.Content, e.Sig)
+	eventSql := "INSERT INTO events (id, pubkey, created_at, kind, tags, content, sig) VALUES (?, ?, ?, ?, ?, ?, ?)"
+
+	_, err := s.db.Exec(eventSql, e.Id, e.PubKey, e.CreatedAt, e.Kind, tags, e.Content, e.Sig)
 	if err != nil {
 		return err
 	}
@@ -101,7 +106,6 @@ func (s *relay) query(subId string, filter nostr.Filter, stream chan<- nostr.Mes
 			return nil
 		}
 
-		// no sql injection issues since these are ints
 		inkinds := make([]string, len(filter.Kinds))
 		for i, kind := range filter.Kinds {
 			inkinds[i] = strconv.Itoa(int(kind))
@@ -116,6 +120,9 @@ func (s *relay) query(subId string, filter nostr.Filter, stream chan<- nostr.Mes
 
 	query := fmt.Sprintf("SELECT * FROM events WHERE %s", strings.Join(conditions, " AND "))
 
+    // TODO: Make this a log.Debug()
+    log.Println(query)
+
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return err
@@ -123,15 +130,28 @@ func (s *relay) query(subId string, filter nostr.Filter, stream chan<- nostr.Mes
 	defer rows.Close()
 
 	var events []*nostr.Event
+    var tags string
 
 	for rows.Next() {
+
 		var event nostr.Event
-		err := rows.Scan(&event.Id, &event.PubKey, &event.CreatedAt, &event.Kind, &event.Content, &event.Sig)
+
+		err := rows.Scan(&event.Id, &event.PubKey, &event.CreatedAt, &event.Kind, &tags, &event.Content, &event.Sig)
 		if err != nil {
 			return err
 		}
+
+        err = json.Unmarshal([]byte(tags), &event.Tags)
+        if err != nil {
+            log.Fatal(err)
+        }
+        log.Println(event.Tags)
+
 		events = append(events, &event)
 	}
+
+    log.Println(tags)
+    log.Printf("event match found in database [count: %d]", len(events))
 
 	for _, event := range events {
 		stream <- nostr.MessageEvent{
